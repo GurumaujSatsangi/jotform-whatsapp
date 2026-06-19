@@ -1,5 +1,6 @@
 const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const multer = require('multer');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 
@@ -12,6 +13,8 @@ const technicianDirectory = {
   Gurumauj: '919875691340',
   Parul: '916289682035'
 };
+
+const upload = multer().none();
 
 let sock;
 
@@ -47,7 +50,7 @@ async function connectToWhatsApp() {
   });
 }
 
-app.post('/jotform-webhook', async (req, res) => {
+app.post('/jotform-webhook', upload, async (req, res) => {
   try {
     const rawRequest = req.body && req.body.rawRequest;
 
@@ -55,8 +58,10 @@ app.post('/jotform-webhook', async (req, res) => {
       return res.status(400).send('Invalid payload: Missing rawRequest');
     }
 
+    console.log('Parsed Form Data:', JSON.parse(req.body.rawRequest));
+
     const rawData = typeof rawRequest === 'string' ? JSON.parse(rawRequest) : rawRequest;
-    const techName = rawData.assignedTo70;
+    const techName = rawData.q_assignedTo;
     const jobDetails = rawData.detailsOf;
     const address = rawData.room;
 
