@@ -61,9 +61,10 @@ app.post('/jotform-webhook', upload, async (req, res) => {
     console.log('Parsed Form Data:', JSON.parse(req.body.rawRequest));
 
     const rawData = typeof rawRequest === 'string' ? JSON.parse(rawRequest) : rawRequest;
-    const techName = rawData.q_assignedTo;
-    const jobDetails = rawData.detailsOf;
-    const address = rawData.room;
+    const techName = rawData.q76_assignedTo;
+    const jobDetails = rawData.q17_detailsOf;
+    const address = rawData.q69_room;
+    const jobId = rawData.q8_uniqueId;
 
     const techPhone = technicianDirectory[techName];
 
@@ -72,8 +73,7 @@ app.post('/jotform-webhook', upload, async (req, res) => {
     }
 
     const jid = `${techPhone}@s.whatsapp.net`;
-    const message = `*🔧 New Job Assignment*\n\n*Technician:* ${techName}\n*Details:* ${jobDetails}\n*Location:* ${address}\n\nPlease acknowledge receipt by replying to this message.`;
-
+    const message = `*New ARN Assigned: ${jobId}*\n\n*Technician:* ${techName}\n*Room:* ${roomNumber}\n*Issue:* ${jobDetails}`;
     await sock.sendMessage(jid, { text: message });
     return res.status(200).send('Success');
   } catch (error) {
