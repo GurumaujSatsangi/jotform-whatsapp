@@ -1,6 +1,5 @@
 const express = require('express');
-const { default: makeWASocket, initAuthCreds, BufferJSON, proto } = require('@whiskeysockets/baileys');
-const { createClient } = require('@supabase/supabase-js');
+const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const multer = require('multer');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -8,18 +7,6 @@ const qrcode = require('qrcode-terminal');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
-// --- DATABASE CONFIGURATION ---
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-    console.error('❌ CRITICAL ERROR: Supabase credentials missing from environment variables.');
-} else {
-    console.log('✅ Supabase credentials detected.');
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 const technicianDirectory = {
   "TAPAN SAHA- Himgiri, M-9734779358": '919734779358',
@@ -31,90 +18,12 @@ const upload = multer().none();
 
 let sock;
 
-// --- CUSTOM SUPABASE AUTH ADAPTER ---
-async function useSupabaseAuthState(sessionId = 'session1') {
-    const writeData = async (data, id) => {
-        try {
-            const jsonString = JSON.stringify(data, BufferJSON.replacer);
-            const { error } = await supabase.from('wa_auth_state').upsert({ id: `${sessionId}-${id}`, data: jsonString });
-            if (error) console.error(`❌ Supabase Write Error [${id}]:`, error.message);
-        } catch (err) {
-            console.error(`❌ Supabase Write Exception [${id}]:`, err.message);
-        }
-    };
-
-    const readData = async (id) => {
-        try {
-            const { data, error } = await supabase.from('wa_auth_state').select('data').eq('id', `${sessionId}-${id}`).single();
-            if (error && error.code !== 'PGRST116') { 
-                // Ignore PGRST116 (No rows found), log everything else
-                console.error(`❌ Supabase Read Error [${id}]:`, error.message);
-            }
-            if (data && data.data) {
-                return JSON.parse(data.data, BufferJSON.reviver);
-            }
-            return null;
-        } catch (err) {
-            console.error(`❌ Supabase Read Exception [${id}]:`, err.message);
-            return null;
-        }
-    };
-
-    const removeData = async (id) => {
-        try {
-            const { error } = await supabase.from('wa_auth_state').delete().eq('id', `${sessionId}-${id}`);
-            if (error) console.error(`❌ Supabase Delete Error [${id}]:`, error.message);
-        } catch (err) {
-            console.error(`❌ Supabase Delete Exception [${id}]:`, err.message);
-        }
-    };
-
-    console.log('🔄 Fetching existing WhatsApp credentials from Supabase...');
-    const creds = (await readData('creds')) || initAuthCreds();
-    console.log('✅ Credentials fetched/initialized successfully.');
-
-    return {
-        state: {
-            creds,
-            keys: {
-                get: async (type, ids) => {
-                    const data = {};
-                    await Promise.all(
-                        ids.map(async (id) => {
-                            let value = await readData(`${type}-${id}`);
-                            if (type === 'app-state-sync-key' && value) {
-                                value = proto.Message.AppStateSyncKeyData.fromObject(value);
-                            }
-                            data[id] = value;
-                        })
-                    );
-                    return data;
-                },
-                set: async (data) => {
-                    const tasks = [];
-                    for (const category in data) {
-                        for (const id in data[category]) {
-                            const value = data[category][id];
-                            const key = `${category}-${id}`;
-                            if (value) {
-                                tasks.push(writeData(value, key));
-                            } else {
-                                tasks.push(removeData(key));
-                            }
-                        }
-                    }
-                    await Promise.all(tasks);
-                }
-            }
-        },
-        saveCreds: () => writeData(creds, 'creds')
-    };
-}
-
 // --- WHATSAPP CONNECTION LOGIC ---
 async function connectToWhatsApp() {
-  console.log('🚀 Initializing WhatsApp connection...');
-  const { state, saveCreds } = await useSupabaseAuthState();
+  console.log('🚀 Initializing WhatsApp connection using local storage...');
+  
+  // Reverted back to local folder auth
+  const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
   sock = makeWASocket({
     auth: state,
@@ -140,10 +49,16 @@ async function connectToWhatsApp() {
         connectToWhatsApp();
       }
     } else if (connection === 'open') {
-      console.log('✅ WhatsApp connection established using Supabase Auth!');
+      console.log('✅ WhatsApp connection established and ready to send messages!');
     }
   });
 }
+
+// --- PING ROUTE FOR CRON-JOB.ORG ---
+app.get('/ping', (req, res) => {
+    // Cron job hits this every 14 minutes to prevent Render from sleeping
+    res.status(200).send('Server is awake');
+});
 
 // --- WEBHOOK ENDPOINT ---
 app.post('/jotform-webhook', upload, async (req, res) => {
@@ -169,7 +84,6 @@ app.post('/jotform-webhook', upload, async (req, res) => {
     const jobDetails = rawData.detailsOf;
     const address = rawData.roomNo;
     const jobId = rawData.typeA;
-    const crewSerialnumber = rawData.crewserialnumber;
 
     let techsArray = [];
     if (Array.isArray(selectedTechsRaw)) {
@@ -193,7 +107,6 @@ app.post('/jotform-webhook', upload, async (req, res) => {
         }
 
         const jid = `${techPhone}@s.whatsapp.net`;
-        // I noticed you extracted crewSerialnumber but didn't put it in the message. You can add it here if needed!
         const message = `*New ARN Assigned: ${jobId}*\n\n*Technician:* ${cleanTechName}\n*Room:* ${address}\n*Issue:* ${jobDetails}`;
         
         try {
@@ -216,7 +129,6 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`🌐 Webhook listener active on port ${PORT}`);
-  // Catch top-level WhatsApp connection failures (like Supabase refusing to connect entirely)
   connectToWhatsApp().catch(err => {
       console.error("❌ FATAL STARTUP ERROR IN WHATSAPP CONNECTION:", err);
   });
