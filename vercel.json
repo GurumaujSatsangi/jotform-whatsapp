@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/api/jotform-webhook",
-      "destination": "/api/jotform-webhook.js"
-    }
-  ]
-}
