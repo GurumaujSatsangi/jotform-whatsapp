@@ -56,9 +56,9 @@ app.post('/jotform-webhook', async (req, res) => {
     }
 
     const rawData = typeof rawRequest === 'string' ? JSON.parse(rawRequest) : rawRequest;
-    const techName = rawData.q1_assignedTechnician;
-    const jobDetails = rawData.q2_jobDescription;
-    const address = rawData.q3_clientAddress;
+    const techName = rawData.assignedTo70;
+    const jobDetails = rawData.detailsOf;
+    const address = rawData.room;
 
     const techPhone = technicianDirectory[techName];
 
