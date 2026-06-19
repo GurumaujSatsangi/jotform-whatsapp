@@ -14,8 +14,11 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-    console.error('CRITICAL ERROR: Supabase credentials missing from environment variables.');
+    console.error('❌ CRITICAL ERROR: Supabase credentials missing from environment variables.');
+} else {
+    console.log('✅ Supabase credentials detected.');
 }
+
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const technicianDirectory = {
@@ -29,26 +32,46 @@ const upload = multer().none();
 let sock;
 
 // --- CUSTOM SUPABASE AUTH ADAPTER ---
-// This replaces useMultiFileAuthState to save session keys in PostgreSQL
 async function useSupabaseAuthState(sessionId = 'session1') {
     const writeData = async (data, id) => {
-        const jsonString = JSON.stringify(data, BufferJSON.replacer);
-        await supabase.from('wa_auth_state').upsert({ id: `${sessionId}-${id}`, data: jsonString });
+        try {
+            const jsonString = JSON.stringify(data, BufferJSON.replacer);
+            const { error } = await supabase.from('wa_auth_state').upsert({ id: `${sessionId}-${id}`, data: jsonString });
+            if (error) console.error(`❌ Supabase Write Error [${id}]:`, error.message);
+        } catch (err) {
+            console.error(`❌ Supabase Write Exception [${id}]:`, err.message);
+        }
     };
 
     const readData = async (id) => {
-        const { data, error } = await supabase.from('wa_auth_state').select('data').eq('id', `${sessionId}-${id}`).single();
-        if (data && data.data) {
-            return JSON.parse(data.data, BufferJSON.reviver);
+        try {
+            const { data, error } = await supabase.from('wa_auth_state').select('data').eq('id', `${sessionId}-${id}`).single();
+            if (error && error.code !== 'PGRST116') { 
+                // Ignore PGRST116 (No rows found), log everything else
+                console.error(`❌ Supabase Read Error [${id}]:`, error.message);
+            }
+            if (data && data.data) {
+                return JSON.parse(data.data, BufferJSON.reviver);
+            }
+            return null;
+        } catch (err) {
+            console.error(`❌ Supabase Read Exception [${id}]:`, err.message);
+            return null;
         }
-        return null;
     };
 
     const removeData = async (id) => {
-        await supabase.from('wa_auth_state').delete().eq('id', `${sessionId}-${id}`);
+        try {
+            const { error } = await supabase.from('wa_auth_state').delete().eq('id', `${sessionId}-${id}`);
+            if (error) console.error(`❌ Supabase Delete Error [${id}]:`, error.message);
+        } catch (err) {
+            console.error(`❌ Supabase Delete Exception [${id}]:`, err.message);
+        }
     };
 
+    console.log('🔄 Fetching existing WhatsApp credentials from Supabase...');
     const creds = (await readData('creds')) || initAuthCreds();
+    console.log('✅ Credentials fetched/initialized successfully.');
 
     return {
         state: {
@@ -90,6 +113,7 @@ async function useSupabaseAuthState(sessionId = 'session1') {
 
 // --- WHATSAPP CONNECTION LOGIC ---
 async function connectToWhatsApp() {
+  console.log('🚀 Initializing WhatsApp connection...');
   const { state, saveCreds } = await useSupabaseAuthState();
 
   sock = makeWASocket({
@@ -111,7 +135,7 @@ async function connectToWhatsApp() {
 
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect.error?.output?.statusCode !== 401;
-      console.log('Connection closed. Reconnecting:', shouldReconnect);
+      console.log('⚠️ Connection closed. Reconnecting:', shouldReconnect);
       if (shouldReconnect) {
         connectToWhatsApp();
       }
@@ -124,14 +148,22 @@ async function connectToWhatsApp() {
 // --- WEBHOOK ENDPOINT ---
 app.post('/jotform-webhook', upload, async (req, res) => {
   try {
+    console.log('🔔 Incoming Webhook Triggered!');
+    
     const rawRequest = req.body && req.body.rawRequest;
 
     if (!rawRequest) {
+      console.log('❌ Webhook rejected: Missing rawRequest. Body was:', req.body);
       return res.status(400).send('Invalid payload: Missing rawRequest');
     }
 
     const rawData = typeof rawRequest === 'string' ? JSON.parse(rawRequest) : rawRequest;
     
+    // --- MASSIVE LOG TO SEE JOTFORM KEYS ---
+    console.log('\n--- PARSED JOTFORM DATA ---');
+    console.log(JSON.stringify(rawData, null, 2));
+    console.log('---------------------------\n');
+
     // Extract fields
     const selectedTechsRaw = rawData.assignedTo69;
     const jobDetails = rawData.detailsOf;
@@ -145,7 +177,7 @@ app.post('/jotform-webhook', upload, async (req, res) => {
     } else if (typeof selectedTechsRaw === 'string') {
         techsArray = [selectedTechsRaw];
     } else {
-        console.log('No technicians were selected.');
+        console.log(`❌ No technicians found in 'assignedTo69'. Value was:`, selectedTechsRaw);
         return res.status(400).send('No technicians selected');
     }
 
@@ -156,11 +188,12 @@ app.post('/jotform-webhook', upload, async (req, res) => {
         const techPhone = technicianDirectory[cleanTechName];
 
         if (!techPhone) {
-            console.log(`⚠️ Technician mapping not found for: ${cleanTechName}`);
+            console.log(`⚠️ Technician mapping not found in directory for: "${cleanTechName}"`);
             continue; 
         }
 
         const jid = `${techPhone}@s.whatsapp.net`;
+        // I noticed you extracted crewSerialnumber but didn't put it in the message. You can add it here if needed!
         const message = `*New ARN Assigned: ${jobId}*\n\n*Technician:* ${cleanTechName}\n*Room:* ${address}\n*Issue:* ${jobDetails}`;
         
         try {
@@ -168,13 +201,13 @@ app.post('/jotform-webhook', upload, async (req, res) => {
             console.log(`✅ Message successfully sent to ${cleanTechName}`);
             sentCount++;
         } catch (err) {
-            console.error(`❌ Failed to send message to ${cleanTechName}:`, err);
+            console.error(`❌ Failed to send message to ${cleanTechName} via Baileys:`, err);
         }
     }
 
     return res.status(200).send(`Processed successfully. Messages sent: ${sentCount}`);
   } catch (error) {
-    console.error('Error processing incoming webhook:', error);
+    console.error('❌ FATAL Error processing incoming webhook:', error);
     return res.status(500).send('Internal Server Error');
   }
 });
@@ -182,6 +215,9 @@ app.post('/jotform-webhook', upload, async (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`Webhook listener active on port ${PORT}`);
-  connectToWhatsApp();
+  console.log(`🌐 Webhook listener active on port ${PORT}`);
+  // Catch top-level WhatsApp connection failures (like Supabase refusing to connect entirely)
+  connectToWhatsApp().catch(err => {
+      console.error("❌ FATAL STARTUP ERROR IN WHATSAPP CONNECTION:", err);
+  });
 });
