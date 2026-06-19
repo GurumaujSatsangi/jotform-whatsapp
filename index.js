@@ -73,7 +73,7 @@ app.post('/jotform-webhook', upload, async (req, res) => {
     }
 
     const jid = `${techPhone}@s.whatsapp.net`;
-    const message = `*New ARN Assigned: ${jobId}*\n\n*Technician:* ${techName}\n*Room:* ${roomNumber}\n*Issue:* ${jobDetails}`;
+    const message = `*New ARN Assigned: ${jobId}*\n\n*Technician:* ${techName}\n*Room:* ${address}\n*Issue:* ${jobDetails}`;
     await sock.sendMessage(jid, { text: message });
     return res.status(200).send('Success');
   } catch (error) {
