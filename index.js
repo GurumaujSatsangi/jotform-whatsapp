@@ -133,11 +133,11 @@ app.post('/jotform-webhook', upload, async (req, res) => {
     const rawData = typeof rawRequest === 'string' ? JSON.parse(rawRequest) : rawRequest;
     
     // Extract fields
-    const selectedTechsRaw = rawData.q76_assignedTo;
-    const jobDetails = rawData.q17_detailsOf;
-    const address = rawData.q69_room;
-    const jobId = rawData.q8_uniqueId;
-    const crewSerialnumber = rawData.crew;
+    const selectedTechsRaw = rawData.assignedTo69;
+    const jobDetails = rawData.detailsOf;
+    const address = rawData.roomNo;
+    const jobId = rawData.typeA;
+    const crewSerialnumber = rawData.crewserialnumber;
 
     let techsArray = [];
     if (Array.isArray(selectedTechsRaw)) {
