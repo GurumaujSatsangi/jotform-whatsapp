@@ -20,7 +20,8 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const technicianDirectory = {
   "TAPAN SAHA- Himgiri, M-9734779358": '919734779358',
-  "AYON DAS - Himgiri, M-9674705548": '919674705548'
+  "AYON DAS - Himgiri, M-9674705548": '919674705548',
+  "Test":'916289682035'
 };
 
 const upload = multer().none();
