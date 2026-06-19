@@ -80,10 +80,10 @@ app.post('/jotform-webhook', upload, async (req, res) => {
     console.log('---------------------------\n');
 
     // Extract fields
-    const selectedTechsRaw = rawData.assignedTo69;
-    const jobDetails = rawData.detailsOf;
-    const address = rawData.roomNo;
-    const jobId = rawData.typeA;
+    const selectedTechsRaw = rawData.q69_assignedTo69;
+    const jobDetails = rawData.q70_detailsOf;
+    const address = rawData.q48_roomNo;
+    const jobId = rawData.q93_typeA;
 
     let techsArray = [];
     if (Array.isArray(selectedTechsRaw)) {
@@ -107,7 +107,7 @@ app.post('/jotform-webhook', upload, async (req, res) => {
         }
 
         const jid = `${techPhone}@s.whatsapp.net`;
-        const message = `*New ARN Assigned: ${jobId}*\n\n*Technician:* ${cleanTechName}\n*Room:* ${address}\n*Issue:* ${jobDetails}`;
+        const message = `*New ARN Assigned: ${jobId}*\n\n*Assigned To:* ${cleanTechName}\n*Room Number:* ${address}\n*Details of Work:* ${jobDetails}\n*CREW Serial Number:* ${jobId}\n\n*Please login to the Technician Panel.`;
         
         try {
             await sock.sendMessage(jid, { text: message });
