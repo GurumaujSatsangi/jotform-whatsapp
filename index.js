@@ -11,6 +11,8 @@ app.use(express.json());
 const technicianDirectory = {
   "TAPAN SAHA- Himgiri, M-9734779358": '919734779358',
   "AYON DAS - Himgiri, M-9674705548": '919674705548',
+  "SEKH SAHA SEKANDAR-Himgiri, M 8101623229": '918101623229',
+  "SYED MOSLEM HOSSAIN-Himgiri, -M 9830157879":'919830157879',
   "Test":'916289682035'
 };
 
