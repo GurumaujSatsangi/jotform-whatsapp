@@ -86,6 +86,7 @@ app.post('/jotform-webhook', upload, async (req, res) => {
     const jobDetails = rawData.q70_detailsOf;
     const address = rawData.q48_roomNo;
     const jobId = rawData.q93_typeA;
+    const crewserialnumber = rawData.q40_crewserialnumber;
 
     let techsArray = [];
     if (Array.isArray(selectedTechsRaw)) {
@@ -109,7 +110,7 @@ app.post('/jotform-webhook', upload, async (req, res) => {
         }
 
         const jid = `${techPhone}@s.whatsapp.net`;
-        const message = `*New ARN Assigned: ${jobId}*\n\n*Assigned To:* ${cleanTechName}\n*Room Number:* ${address}\n*Details of Work:* ${jobDetails}\n*CREW Serial Number:* ${jobId}\n\n*Please login to the Technician Panel.`;
+        const message = `*New ARN Assigned: ${jobId}*\n\n*Assigned To:* ${cleanTechName}\n*Room Number:* ${address}\n*Details of Work:* ${jobDetails}\n*CREW Serial Number:* ${crewserialnumber}\n\nPlease login to the Technician Panel and collect the Job Card hardcopy.`;
         
         try {
             await sock.sendMessage(jid, { text: message });
