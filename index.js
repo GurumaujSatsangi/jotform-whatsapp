@@ -1,16 +1,43 @@
 const express = require('express');
 const multer = require('multer');
-const dotenv = require ('dotenv')
+const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
+
+dotenv.config(); // Initialize dotenv to load your environment variables
 
 const app = express();
 const upload = multer();
 
 // 1. Initialize Supabase Client
-// Replace these with your actual Supabase URL and Anon/Service Key
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// 2. Initialize WhatsApp Client
+const client = new Client({
+    authStrategy: new LocalAuth(), // Saves session locally so you only scan QR once
+    puppeteer: {
+        args: ['--no-sandbox', '--disable-setuid-sandbox'] // Required for cloud environments like Render
+    }
+});
+
+client.on('qr', (qr) => {
+    console.log('\n--- Scan this QR code with your WhatsApp app ---');
+    qrcode.generate(qr, { small: true });
+});
+
+client.on('ready', () => {
+    console.log('WhatsApp Client is ready and authenticated!');
+});
+
+client.on('auth_failure', msg => {
+    console.error('WhatsApp Authentication failure:', msg);
+});
+
+// Start the WhatsApp client connection
+client.initialize();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -19,7 +46,7 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
     try {
         console.log('\n--- ===== PROCESSING NEW SUBMISSION ===== ---');
 
-        // 2. Extract IDs directly from the parsed multipart body
+        // Extract IDs directly from the parsed multipart body
         const formId = req.body.formID;
         const submissionId = req.body.submissionID;
         const uniqueId = req.body.q8_uniqueId; // e.g., "WS/AC/0002556"
@@ -36,14 +63,13 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
             return res.status(200).send('No technician assigned.');
         }
 
-        // 3. Look up the technician data in Supabase based on formId and technician name
-        // Assuming your table is named 'technicians' and has columns: 'form_id', 'name', 'phone'
+        // 3. Look up the technician data in Supabase
         const { data: technician, error } = await supabase
             .from('technicians')
             .select('phone') 
             .eq('form_id', formId)
             .eq('name', assignedTechName)
-            .single(); // Expecting exactly one matching record
+            .single();
 
         if (error || !technician) {
             console.error(`Database Lookup Failed or Tech Not Found for Form ${formId}:`, error?.message);
@@ -51,13 +77,24 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
         }
 
         console.log(`Successfully fetched technician details from Supabase!`);
-        console.log(`Phone: ${technician.phone}`);
+        console.log(`Raw Database Phone: ${technician.phone}`);
 
-        // 4. NEXT STEP: Send the WhatsApp notification using technician.phone
-        // (We will plug the whatsapp-web.js logic right here)
+        // 4. Send the WhatsApp notification
+        // Clean the phone number (remove any '+', spaces, or dashes from the database record)
+        const formattedPhone = technician.phone.replace(/\D/g, ''); 
+        
+        // Append '@c.us' as required by whatsapp-web.js
+        const chatId = `${formattedPhone}@c.us`; 
+        
+        // Draft the message content using your Jotform data
+        const message = `🛠️ *New Job Assignment*\n\n*Task ID:* ${uniqueId || 'N/A'}\n*Submission:* ${submissionId}\n\nYou have been assigned a new task. Please check your dashboard for details.`;
+
+        // Dispatch the message
+        await client.sendMessage(chatId, message);
+        console.log(`✅ WhatsApp notification sent successfully to ${assignedTechName} at ${formattedPhone}`);
         
         console.log('--- ======================================== --- \n');
-        res.status(200).send('Payload successfully processed and database queried.');
+        res.status(200).send('Payload successfully processed, database queried, and message sent.');
 
     } catch (error) {
         console.error('Error handling webhook workflow:', error);
