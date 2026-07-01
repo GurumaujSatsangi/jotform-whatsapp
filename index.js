@@ -81,6 +81,8 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
         const submissionId = formData.submissionID;
         const uniqueId = cleanString(formData.q8_uniqueId); 
         const assignedTechName = cleanString(formData.q71_assignedTo71); 
+        const detailsofwork = cleanString(formData.q17_detailsOf)
+        const CREWNumber = cleanString(formData.q40_typeA)
 
         console.log(`Form ID: ${formId}`);
         console.log(`Submission ID: ${submissionId}`);
@@ -112,7 +114,7 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
         const formattedPhone = technician.phone.replace(/\D/g, ''); 
         const jid = `${formattedPhone}@s.whatsapp.net`; 
         
-        const messageText = `🛠️ *New Job Assignment*\n\n*Task ID:* ${uniqueId || 'N/A'}\n*Submission:* ${submissionId}\n\nYou have been assigned a new task. Please check your dashboard for details.`;
+        const messageText = `*New ARN Assigned to ${assignedTechName}!*\n\n*ARN:* ${uniqueId || 'N/A'}\n*Details of Work:* ${submissionId}\n*CREW Serial Number:* ${CREWNumber}\n\nYou have been assigned a new task. Please check your dashboard for details.`;
 
         // 6. Send the message via Baileys socket
         if (sock) {
