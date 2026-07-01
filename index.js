@@ -3,38 +3,40 @@ const multer = require('multer');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const qrcode = require('qrcode-terminal'); // <-- Import this again
 
 dotenv.config();
 
 const app = express();
 const upload = multer();
 
-// 1. Initialize Supabase Client
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// 2. Global variable to hold the active WhatsApp socket
 let sock;
 
-// 3. Initialize Baileys WhatsApp Connection
 async function connectToWhatsApp() {
-    // This helper saves and loads the login session securely
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true, // Automatically prints the QR code to your Render logs
+        // printQRInTerminal: true is REMOVED
     });
 
-    // Listen for connection updates (QR code, connected, disconnected)
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+        // Destructure 'qr' from the update payload
+        const { connection, lastDisconnect, qr } = update;
         
+        // MANUALLY print the QR code if it exists in the update
+        if (qr) {
+            console.log('\n--- 📱 Scan this QR code with your WhatsApp app ---');
+            qrcode.generate(qr, { small: true });
+        }
+
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('WhatsApp connection closed due to', lastDisconnect.error, ', reconnecting:', shouldReconnect);
-            // Reconnect if not explicitly logged out
+            console.log('WhatsApp connection closed, reconnecting:', shouldReconnect);
             if (shouldReconnect) {
                 connectToWhatsApp();
             }
@@ -43,11 +45,9 @@ async function connectToWhatsApp() {
         }
     });
 
-    // Save credentials whenever they are updated
     sock.ev.on('creds.update', saveCreds);
 }
 
-// Start the WhatsApp connection process
 connectToWhatsApp();
 
 app.use(express.urlencoded({ extended: true }));
@@ -71,7 +71,6 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
             return res.status(200).send('No technician assigned.');
         }
 
-        // Look up the technician data in Supabase
         const { data: technician, error } = await supabase
             .from('technicians')
             .select('phone') 
@@ -84,17 +83,11 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
             return res.status(200).send('Webhook received, but technician data not found.');
         }
 
-        console.log(`Database Phone: ${technician.phone}`);
-
-        // Clean the phone number to strictly digits
         const formattedPhone = technician.phone.replace(/\D/g, ''); 
-        
-        // Baileys requires the '@s.whatsapp.net' suffix
         const jid = `${formattedPhone}@s.whatsapp.net`; 
         
         const messageText = `🛠️ *New Job Assignment*\n\n*Task ID:* ${uniqueId || 'N/A'}\n*Submission:* ${submissionId}\n\nYou have been assigned a new task. Please check your dashboard for details.`;
 
-        // Make sure the socket is actually connected before sending
         if (sock) {
             await sock.sendMessage(jid, { text: messageText });
             console.log(`✅ WhatsApp notification sent successfully to ${assignedTechName} at ${formattedPhone}`);
