@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-import dotenv from 'dotenv'
+const dotenv = require ('dotenv')
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
