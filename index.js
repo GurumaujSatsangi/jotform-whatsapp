@@ -57,20 +57,43 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
     try {
         console.log('\n--- ===== PROCESSING NEW SUBMISSION ===== ---');
 
-        const formId = req.body.formID;
-        const submissionId = req.body.submissionID;
-        const uniqueId = req.body.q8_uniqueId; 
-        const assignedTechName = req.body.q71_assignedTo71;
+        // 1. Start with the default body
+        let formData = req.body;
+
+        // 2. If Jotform sent a 'rawRequest' string, parse it and merge it
+        if (req.body.rawRequest) {
+            try {
+                const parsedRaw = JSON.parse(req.body.rawRequest);
+                formData = { ...formData, ...parsedRaw };
+            } catch (err) {
+                console.log('Error parsing rawRequest:', err.message);
+            }
+        }
+
+        // Helper function to strip out weird escaped quotes Jotform sometimes adds
+        const cleanString = (str) => {
+            if (!str) return undefined;
+            return typeof str === 'string' ? str.replace(/\\"/g, '').replace(/"/g, '').trim() : str;
+        };
+
+        // 3. Extract IDs securely from the parsed formData
+        const formId = formData.formID;
+        const submissionId = formData.submissionID;
+        const uniqueId = cleanString(formData.q8_uniqueId); 
+        const assignedTechName = cleanString(formData.q71_assignedTo71); 
 
         console.log(`Form ID: ${formId}`);
         console.log(`Submission ID: ${submissionId}`);
-        console.log(`Assigned Tech: ${assignedTechName}`);
+        console.log(`Unique ID: ${uniqueId}`);
+        console.log(`Assigned Tech Field Value: ${assignedTechName}`);
 
+        // If no technician is assigned yet, stop here
         if (!assignedTechName) {
-            console.log('No technician assigned. Skipping.');
+            console.log('No technician assigned in this event. Skipping database lookup.');
             return res.status(200).send('No technician assigned.');
         }
 
+        // 4. Look up the technician data in Supabase
         const { data: technician, error } = await supabase
             .from('technicians')
             .select('phone') 
@@ -83,11 +106,15 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
             return res.status(200).send('Webhook received, but technician data not found.');
         }
 
+        console.log(`Database Phone: ${technician.phone}`);
+
+        // 5. Format phone and construct WhatsApp JID
         const formattedPhone = technician.phone.replace(/\D/g, ''); 
         const jid = `${formattedPhone}@s.whatsapp.net`; 
         
         const messageText = `🛠️ *New Job Assignment*\n\n*Task ID:* ${uniqueId || 'N/A'}\n*Submission:* ${submissionId}\n\nYou have been assigned a new task. Please check your dashboard for details.`;
 
+        // 6. Send the message via Baileys socket
         if (sock) {
             await sock.sendMessage(jid, { text: messageText });
             console.log(`✅ WhatsApp notification sent successfully to ${assignedTechName} at ${formattedPhone}`);
