@@ -53,14 +53,33 @@ connectToWhatsApp();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// 1. Define your Form Configuration Map
+const formConfig = {
+    // Your First Form
+    '231359001898460': { 
+        techField: 'q71_assignedTo71', 
+        uniqueIdField: 'q8_uniqueId',
+        detailsField: 'q17_detailsOf',
+        serialField: 'q40_typeA',
+        roomField: 'q48_roomNo'
+    },
+    // Your New Form (From Postman Payload)
+    '242663164559464': { 
+        techField: 'q69_assignedTo69', 
+        uniqueIdField: 'q93_typeA',
+        detailsField: 'q70_detailsOf',
+        serialField: 'q40_crewserialnumber',
+        roomField: 'q48_roomNo'
+    }
+};
+
 app.post('/webhook/jotform', upload.none(), async (req, res) => {
     try {
         console.log('\n--- ===== PROCESSING NEW SUBMISSION ===== ---');
 
-        // 1. Start with the default body
         let formData = req.body;
 
-        // 2. If Jotform sent a 'rawRequest' string, parse it and merge it
+        // Parse buried rawRequest data if present
         if (req.body.rawRequest) {
             try {
                 const parsedRaw = JSON.parse(req.body.rawRequest);
@@ -70,32 +89,44 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
             }
         }
 
-        // Helper function to strip out weird escaped quotes Jotform sometimes adds
-        const cleanString = (str) => {
-            if (!str) return undefined;
-            return typeof str === 'string' ? str.replace(/\\"/g, '').replace(/"/g, '').trim() : str;
+        const formId = formData.formID;
+        const config = formConfig[formId];
+
+        if (!config) {
+            console.log(`Form ID ${formId} is not configured in our map. Skipping.`);
+            return res.status(200).send('Ignored unconfigured form.');
+        }
+
+        // Helper function to extract array items and strip out weird escaped quotes
+        const extractValue = (val) => {
+            if (!val) return undefined;
+            if (Array.isArray(val)) val = val[0]; 
+            return typeof val === 'string' ? val.replace(/\\"/g, '').replace(/"/g, '').trim() : val;
         };
 
-        // 3. Extract IDs securely from the parsed formData
-        const formId = formData.formID;
+        // 2. Extract values dynamically based on the form config map
         const submissionId = formData.submissionID;
-        const uniqueId = cleanString(formData.q8_uniqueId); 
-        const assignedTechName = cleanString(formData.q71_assignedTo71); 
-        const detailsofwork = cleanString(formData.q17_detailsOf)
-        const CREWNumber = cleanString(formData.q40_typeA)
+        
+        // Using fallback || logic to catch the field regardless of how Jotform formats the key
+        const assignedTechName = extractValue(formData[config.techField] || formData[config.techField.replace(/q\d+_/, '')]);
+        const uniqueId = extractValue(formData[config.uniqueIdField] || formData[config.uniqueIdField.replace(/q\d+_/, '')]);
+        const detailsofwork = extractValue(formData[config.detailsField] || formData[config.detailsField.replace(/q\d+_/, '')]);
+        const CREWNumber = extractValue(formData[config.serialField] || formData[config.serialField.replace(/q\d+_/, '')]);
+        const RoomNumber = extractValue(formData[config.roomField] || formData[config.roomField.replace(/q\d+_/, '')]);
 
         console.log(`Form ID: ${formId}`);
         console.log(`Submission ID: ${submissionId}`);
-        console.log(`Unique ID: ${uniqueId}`);
-        console.log(`Assigned Tech Field Value: ${assignedTechName}`);
+        console.log(`Unique ID (ARN): ${uniqueId}`);
+        console.log(`Assigned Tech: ${assignedTechName}`);
+        console.log(`Details of Work: ${detailsofwork}`);
+        console.log(`Serial Number: ${CREWNumber}`);
 
-        // If no technician is assigned yet, stop here
         if (!assignedTechName) {
             console.log('No technician assigned in this event. Skipping database lookup.');
             return res.status(200).send('No technician assigned.');
         }
 
-        // 4. Look up the technician data in Supabase
+        // 3. Look up the technician data in Supabase
         const { data: technician, error } = await supabase
             .from('technicians')
             .select('phone') 
@@ -110,11 +141,12 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
 
         console.log(`Database Phone: ${technician.phone}`);
 
-        // 5. Format phone and construct WhatsApp JID
+        // 4. Format phone and construct WhatsApp JID
         const formattedPhone = technician.phone.replace(/\D/g, ''); 
         const jid = `${formattedPhone}@s.whatsapp.net`; 
         
-        const messageText = `*New ARN Assigned to ${assignedTechName}!*\n\n*ARN:* ${uniqueId || 'N/A'}\n*Details of Work:* ${submissionId}\n*CREW Serial Number:* ${CREWNumber}\n\nYou have been assigned a new task. Please check your dashboard for details.`;
+        // 5. Construct the dynamic WhatsApp message
+        const messageText = `*New ARN Assigned to ${assignedTechName}!*\n\n*ARN:* ${uniqueId || 'N/A'}\n*Details of Work:* ${detailsofwork || 'N/A'}\n*CREW Serial Number:* ${CREWNumber || 'N/A'}\n*Room No.:* ${RoomNumber || 'N/A'}\n\nThis is a job assignment notification. Please log in to the Technician dashboard to view the job details and collect the hard copy of the Job Card.`;
 
         // 6. Send the message via Baileys socket
         if (sock) {
