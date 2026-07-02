@@ -70,6 +70,37 @@ const formConfig = {
         detailsField: 'q70_detailsOf',
         serialField: 'q40_crewserialnumber',
         roomField: 'q48_roomNo'
+    },
+    '242431311316442':{
+
+        techField: 'q70_assignedTo70', 
+        uniqueIdField: 'q8_uniqueId',
+        detailsField: 'q17_detailsOf',
+        roomField: 'q69_room'
+
+    },
+    '233044875347461':{
+
+        techField: 'q60_assignedTo', 
+        uniqueIdField: 'q8_uniqueId',
+        detailsField: 'q17_detailsOf'
+
+    },
+    '242565520915457':{
+
+        techField: 'q59_assignedTo59', 
+        uniqueIdField: 'q8_uniqueId',
+        detailsField: 'q17_detailsOf'
+
+    },
+    '261594476733468':{
+
+        techField: 'q70_assignedTo70', 
+        uniqueIdField: 'q8_uniqueId',
+        detailsField: 'q17_detailsOf',
+        roomField: 'q69_room'
+
+
     }
 };
 
@@ -98,21 +129,30 @@ app.post('/webhook/jotform', upload.none(), async (req, res) => {
         }
 
         // Helper function to extract array items and strip out weird escaped quotes
-        const extractValue = (val) => {
-            if (!val) return undefined;
-            if (Array.isArray(val)) val = val[0]; 
-            return typeof val === 'string' ? val.replace(/\\"/g, '').replace(/"/g, '').trim() : val;
-        };
+        // Helper function to handle arrays and strip out weird escaped quotes
+const extractValue = (val) => {
+    if (!val) return undefined;
+    if (Array.isArray(val)) val = val[0]; 
+    return typeof val === 'string' ? val.replace(/\\"/g, '').replace(/"/g, '').trim() : val;
+};
 
-        // 2. Extract values dynamically based on the form config map
-        const submissionId = formData.submissionID;
-        
-        // Using fallback || logic to catch the field regardless of how Jotform formats the key
-        const assignedTechName = extractValue(formData[config.techField] || formData[config.techField.replace(/q\d+_/, '')]);
-        const uniqueId = extractValue(formData[config.uniqueIdField] || formData[config.uniqueIdField.replace(/q\d+_/, '')]);
-        const detailsofwork = extractValue(formData[config.detailsField] || formData[config.detailsField.replace(/q\d+_/, '')]);
-        const CREWNumber = extractValue(formData[config.serialField] || formData[config.serialField.replace(/q\d+_/, '')]);
-        const RoomNumber = extractValue(formData[config.roomField] || formData[config.roomField.replace(/q\d+_/, '')]);
+// 2. Extract values dynamically based on the form config map
+const submissionId = formData.submissionID;
+
+// Define a helper to safely extract fields
+const getField = (fieldName) => {
+    if (!config[fieldName]) return 'N/A'; // Return N/A if field is missing from config
+    const key = config[fieldName];
+    const rawVal = formData[key] || formData[key.replace(/q\d+_/, '')];
+    const val = extractValue(rawVal);
+    return val || 'N/A'; // Return N/A if field is empty in payload
+};
+
+const assignedTechName = getField('techField');
+const uniqueId = getField('uniqueIdField');
+const detailsofwork = getField('detailsField');
+const CREWNumber = getField('serialField');
+const RoomNumber = getField('roomField');
 
         console.log(`Form ID: ${formId}`);
         console.log(`Submission ID: ${submissionId}`);
